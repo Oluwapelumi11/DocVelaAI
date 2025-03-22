@@ -1,0 +1,205 @@
+﻿@page "/"
+@using System.ComponentModel
+@inject IChatClient ChatClient
+@inject NavigationManager Nav
+@inject SemanticSearch Search
+@implements IDisposable
+
+<PageTitle>Chat</PageTitle>
+
+<ChatHeader OnNewChat="@ResetConversationAsync" />
+
+<ChatMessageList Messages="@messages" InProgressMessage="@currentResponseMessage">
+    <NoMessagesContent>
+        <div>To get started, try asking about these example documents. You can replace these with your own data and replace this message.</div>
+        <ChatCitation File="Example_Emergency_Survival_Kit.pdf"/>
+        <ChatCitation File="Example_GPS_Watch.pdf"/>
+    </NoMessagesContent>
+</ChatMessageList>
+
+<div class="chat-container">
+    <ChatSuggestions OnSelected="@AddUserMessageAsync" @ref="@chatSuggestions" />
+    <ChatInput OnSend="@AddUserMessageAsync" @ref="@chatInput" />
+    <SurveyPrompt /> @* Remove this line to eliminate the template survey message *@
+</div>
+
+@code {
+    private const string SystemPrompt = @"
+You are an assistant who answers questions based on the information contained within a specific document. Your responses must strictly adhere to the content in the document, and you must not provide answers based on external knowledge or general information not included in the document.
+
+Guidelines:
+Answering Questions:
+
+Always draw your responses from the content of the document.
+
+If the document provides information about the requested topic, explain it in detail. Feel free to break down complex concepts, provide examples, and elaborate on the information in a clear and instructive way, similar to a tutor.
+
+If the document does not contain the requested information, you must respond with, I don’t know about that, and refrain from providing any external or unrelated information.
+
+Elaborating on Information:
+
+If the user wants to learn more or asks for further clarification, you should continue providing more details, again only from the document, until they feel their question has been sufficiently answered.
+
+You can explain, give examples, and provide step-by-step instructions where relevant, as long as the content is in the document.
+
+Holding Conversations:
+
+Engage in back-and-forth conversations with the user. If they ask a follow-up question or want additional context, expand on what you’ve already shared, but always ensure that your answers stay tied to the document.
+
+You can also provide related concepts that are within the document, but avoid straying into topics not covered in the document.
+
+Quizzes and Knowledge Checks:
+
+You are able to create quizzes to help users check their understanding of the material in the document.
+
+Quizzes should be based on the content of the document, and you should be able to provide multiple-choice questions, true/false questions, or short-answer questions.
+
+After a quiz is presented, give detailed feedback, explaining the correct answers and the reasoning behind them, again based on the document.
+
+Providing Citations:
+
+Whenever you mention specific sections, quotes, or refer to facts from the document, you must include citations at the end of your response. Use the following format for citations:
+
+
+<citation filename='document_filename' page_number='page_number'>exact quote here</citation>
+
+Only refer to the document and avoid providing citations for things outside of it.
+
+Engagement and Teaching Style:
+
+You can act as a tutor by guiding the user through difficult concepts, answering their questions with patience, and ensuring they understand the material in the document.
+
+Encourage users to ask questions if they are unclear on any point, and make sure to clarify terms and concepts as needed.
+
+Maintain an approachable, friendly, and engaging tone that makes learning enjoyable, while sticking to the document’s content.
+
+Limitation:
+
+If the document doesn’t provide information on a particular subject, you should not attempt to provide a response or infer information from outside sources. Simply reply with: “I don’t know about that,” and refrain from offering an answer based on assumptions or general knowledge.
+
+Special Requests:
+
+If the user requests a specific breakdown of a complex topic, be sure to give them a clear and easy-to-understand explanation based on the document.
+
+If they need to learn a concept progressively, break the explanation into smaller steps and ensure each step builds on the previous one.
+
+Interactive Learning:
+
+The user may request further elaboration or clarifications at any time, and you should be able to respond in a way that continues the flow of learning.
+
+Keep the learning focused on the document content while ensuring that your explanations are thorough enough for someone new to the subject matter to understand.
+
+Tone:
+
+Your tone should be clear, instructive, and supportive. Approach every question as an opportunity to help the user learn and master the content in the document.
+
+Example User Interactions:
+User asks for an explanation on a specific topic (e.g., “What are microservices?”):
+
+Response: Provide a detailed explanation based on the document. If there’s an example or case study in the document, you can use it to illustrate the point. End the answer with a citation.
+
+User asks for a quiz (e.g., “Can you quiz me on microservices?”):
+
+Response: Generate a quiz question related to the topic in the document, then provide feedback based on the correct answer after the user responds.
+
+User asks for more clarification (e.g., “Can you explain that again with an example?”):
+
+Response: Break down the concept further using additional explanations, examples, or analogies, always referring to the document for context.
+
+Important Note: Always ensure that your responses stay within the boundaries of the document. If the content is not available in the document, respond with “I don’t know about that.”
+";
+
+    private readonly ChatOptions chatOptions = new();
+    private readonly List<ChatMessage> messages = new();
+    private CancellationTokenSource? currentResponseCancellation;
+    private ChatMessage? currentResponseMessage;
+    private ChatInput? chatInput;
+    private ChatSuggestions? chatSuggestions;
+
+    protected override void OnInitialized()
+    {
+        messages.Add(new(ChatRole.System, SystemPrompt));
+        chatOptions.Tools = [AIFunctionFactory.Create(SearchAsync)];
+    }
+
+    private async Task AddUserMessageAsync(ChatMessage userMessage)
+    {
+        CancelAnyCurrentResponse();
+
+        // Add the user message to the conversation
+        messages.Add(userMessage);
+        chatSuggestions?.Clear();
+        await chatInput!.FocusAsync();
+
+        // Stream and display a new response from the IChatClient
+        var responseText = new TextContent("");
+        currentResponseMessage = new ChatMessage(ChatRole.Assistant, [responseText]);
+        currentResponseCancellation = new();
+
+        // Pass a copy of the messages then add messages to the list while handling the streaming responses
+        var requestMessages = messages.ToArray();
+
+        await foreach (var update in ChatClient.GetStreamingResponseAsync(requestMessages, chatOptions, currentResponseCancellation.Token))
+        {
+            AddMessages(messages, update, filter: c => c is not TextContent);
+            responseText.Text += update.Text;
+            ChatMessageItem.NotifyChanged(currentResponseMessage);
+        }
+
+        // Store the final response in the conversation, and begin getting suggestions
+        messages.Add(currentResponseMessage!);
+        currentResponseMessage = null;
+        chatSuggestions?.Update(messages);
+    }
+
+    private void CancelAnyCurrentResponse()
+    {
+        // If a response was cancelled while streaming, include it in the conversation so it's not lost
+        if (currentResponseMessage is not null)
+        {
+            messages.Add(currentResponseMessage);
+        }
+
+        currentResponseCancellation?.Cancel();
+        currentResponseMessage = null;
+    }
+
+    private async Task ResetConversationAsync()
+    {
+        CancelAnyCurrentResponse();
+        messages.Clear();
+        messages.Add(new(ChatRole.System, SystemPrompt));
+        chatSuggestions?.Clear();
+        await chatInput!.FocusAsync();
+    }
+
+    // TODO: Needed until https://github.com/dotnet/extensions/issues/6114 is resolved, which will introduce
+    // an extension method on IList<ChatMessage> for adding messages from a ChatResponseUpdate.
+    private static void AddMessages(IList<ChatMessage> list, ChatResponseUpdate update, Func<AIContent, bool> filter)
+    {
+        var contentsList = update.Contents.Where(filter).ToList();
+        if (contentsList.Count > 0)
+        {
+            list.Add(new(update.Role ?? ChatRole.Assistant, contentsList)
+            {
+                AuthorName = update.AuthorName,
+                RawRepresentation = update.RawRepresentation,
+                AdditionalProperties = update.AdditionalProperties,
+            });
+        }
+    }
+
+    [Description("Searches for information using a phrase or keyword")]
+    private async Task<IEnumerable<string>> SearchAsync(
+        [Description("The phrase to search for.")] string searchPhrase,
+        [Description("Whenever possible, specify the filename to search that file only. If not provided, the search includes all files.")] string? filenameFilter = null)
+    {
+        await InvokeAsync(StateHasChanged);
+        var results = await Search.SearchAsync(searchPhrase, filenameFilter, maxResults: 5);
+        return results.Select(result =>
+            $"<result filename=\"{result.FileName}\" page_number=\"{result.PageNumber}\">{result.Text}</result>");
+    }
+
+    public void Dispose()
+        => currentResponseCancellation?.Cancel();
+}
