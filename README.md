@@ -42,9 +42,11 @@ To run this project locally, follow the steps below:
    ```bash
    dotnet restore
 3. **Set up your GitHub Personal Access Token**:
-   In appsettings.json:
-      bash```
-      {
-         "GitHubModels:Token": "YOUR_TOKEN_HERE"
-      }
+   Store your GitHub token securely in the user secrets or in the `appsettings.json` file:
+
+### In `appsettings.json`:
+```json
+{
+   "GitHubModels:Token": "YOUR_TOKEN_HERE"
+}
 4. 
