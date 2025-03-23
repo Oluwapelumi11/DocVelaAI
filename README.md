@@ -55,5 +55,35 @@ To run this project locally, follow the steps below:
    ```bash
    dotnet run
    
-   
+ # Usage
+
+### Interacting with the Chatbot
+
+#### Upload a PDF
+Upload any PDF to the system through the web interface.
+
+#### Ask Questions
+After uploading, interact with the chatbot to learn from the document. For example, ask questions like:
+
+- "Can you explain what microservices are?"
+- "What are the main components of a microservices architecture?"
+
+### File Management
+
+- To list all uploaded PDFs, simply type:
+  - "List all uploaded files"
+  
+- To delete a specific file, ask:
+  - "Delete the file [filename]"
+
+### Example Queries
+
+#### Ask about content:
+- "What does the document say about distributed systems?"
+- "Summarize the chapter on microservices."
+
+#### File Management:
+- "List uploaded PDFs."
+- "Delete the file 'microservices_overview.pdf'."
+
  
