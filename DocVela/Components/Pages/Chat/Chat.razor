@@ -1,8 +1,10 @@
 ﻿@page "/"
 @using System.ComponentModel
+@using DocVela.Services.Ingestion
 @inject IChatClient ChatClient
 @inject NavigationManager Nav
 @inject SemanticSearch Search
+@inject IServiceProvider service
 @implements IDisposable
 
 <PageTitle>Chat</PageTitle>
@@ -11,19 +13,22 @@
 
 <ChatMessageList Messages="@messages" InProgressMessage="@currentResponseMessage">
     <NoMessagesContent>
-        <div>To get started, try asking about these example documents. You can replace these with your own data and replace this message.</div>
-        <ChatCitation File="Example_Emergency_Survival_Kit.pdf"/>
-        <ChatCitation File="Example_GPS_Watch.pdf"/>
+        <div>To get started, Upload your Pdf File and wait a few seconds for me to Ingest</div>
+        @foreach (string file in fileList)
+        {
+            <ChatCitation File="@file" />
+        }
     </NoMessagesContent>
 </ChatMessageList>
 
 <div class="chat-container">
     <ChatSuggestions OnSelected="@AddUserMessageAsync" @ref="@chatSuggestions" />
     <ChatInput OnSend="@AddUserMessageAsync" @ref="@chatInput" />
-    <SurveyPrompt /> @* Remove this line to eliminate the template survey message *@
+    <SurveyPrompt /> @* Remove this line to eliminate the template survey message *@ 
 </div>
 
 @code {
+    private IEnumerable<string> fileList = new List<string>();
     private const string SystemPrompt = @"
 You are an assistant who answers questions based on the information contained within a specific document. Your responses must strictly adhere to the content in the document, and you must not provide answers based on external knowledge or general information not included in the document.
 
@@ -116,10 +121,15 @@ Important Note: Always ensure that your responses stay within the boundaries of 
     private ChatInput? chatInput;
     private ChatSuggestions? chatSuggestions;
 
-    protected override void OnInitialized()
+    protected async override Task OnInitializedAsync()
     {
         messages.Add(new(ChatRole.System, SystemPrompt));
-        chatOptions.Tools = [AIFunctionFactory.Create(SearchAsync)];
+        chatOptions.Tools = [
+            AIFunctionFactory.Create(SearchAsync),
+            AIFunctionFactory.Create(DeleteFileAsync),
+            AIFunctionFactory.Create(GetFileListAsync)
+        ];
+        fileList = await GetFileListAsync();
     }
 
     private async Task AddUserMessageAsync(ChatMessage userMessage)
@@ -199,6 +209,94 @@ Important Note: Always ensure that your responses stay within the boundaries of 
         return results.Select(result =>
             $"<result filename=\"{result.FileName}\" page_number=\"{result.PageNumber}\">{result.Text}</result>");
     }
+
+    [Description("Deletes a PDF file from the server so its memory is erased using its filename, or deletes all files if no filename is provided.")]
+    private async Task<string> DeleteFileAsync(
+    [Description("The filename to delete. Leave empty to delete all files, but confirm with the user before doing so.")] string? fileName = null)
+    {
+        var directory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Data");
+
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+
+            if (fileName == null)
+            {
+                foreach (string file in Directory.GetFiles(directory, "*.pdf")) 
+                {
+                    Delete(file);
+                }
+                return "All files have been deleted successfully.";
+            }
+            else
+            {
+                var filePath = Path.Combine(directory, fileName);
+
+                if (File.Exists(filePath))
+                {
+                    Delete(filePath);
+                    return $"{fileName} deleted successfully.";
+                }
+                else
+                {
+                    return $"Error: File '{fileName}' not found.";
+                }
+            }
+
+            await DataIngestor.IngestDataAsync(
+       service,
+       new PDFDirectorySource(Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Data")));
+        }
+        catch (Exception e)
+        {
+            return $"Error: {e.Message}";
+        }
+    }
+
+    private void Delete(string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+            else
+            {
+                Console.WriteLine($"Attempted to delete non-existing file: {filePath}");
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"Error deleting file {filePath}: {e.Message}");
+        }
+    }
+
+    [Description("Retrieves the list of PDF filenames available on the server.")]
+    private async Task<IEnumerable<string>> GetFileListAsync()
+    {
+        var directory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Data");
+
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+
+            if (!Directory.Exists(directory))
+            {
+                return new List<string> { "Error: Directory does not exist." };
+            }
+
+            var files = Directory.GetFiles(directory, "*.pdf") 
+                                 .Select(Path.GetFileName); 
+
+            return files.Any() ? files : new List<string> { "No files found." };
+        }
+        catch (Exception e)
+        {
+            return new List<string> { $"Error: {e.Message}" };
+        }
+    }
+
 
     public void Dispose()
         => currentResponseCancellation?.Cancel();

@@ -12,10 +12,23 @@
         <progress value="@uploadProgress" max="100"></progress>
     </div>
 }
+@if (@uploading)
+{
+    @if (@ingesting)
+    {
+        <p class="bigText">Ingesting data please wait!!!</p>
+    }else
+    {
+        <p class="bigText">Data Ingested Completely!</p>
+    }
+}
 @code {
     private int uploadProgress { get; set; }
+    private bool ingesting { get; set; } = false;
+    private bool uploading { get; set; } = false;
     private async Task LoadFiles(InputFileChangeEventArgs e)
     {
+
         var files = e.GetMultipleFiles();
 
         foreach (var file in files)
@@ -26,10 +39,15 @@
                 await UploadFileAsync(file);
             }
         }
-
+        uploading = true;
+        ingesting = true;
+        StateHasChanged();
         await DataIngestor.IngestDataAsync(
         service,
         new PDFDirectorySource(Path.Combine(Directory.GetCurrentDirectory(),"wwwroot", "Data")));
+        ingesting = false;
+        uploading = false;
+        StateHasChanged();
     }
 
     private async Task UploadFileAsync(IBrowserFile file)
