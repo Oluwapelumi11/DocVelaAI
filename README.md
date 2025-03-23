@@ -26,7 +26,7 @@ To run this project locally, follow the steps below:
 
 ### Prerequisites
 
-- .NET 6.0 or later
+- .NET 9.0 
 - Visual Studio 2022 or any other preferred IDE
 - GitHub Personal Access Token (for AI model integration)
 
@@ -35,4 +35,10 @@ To run this project locally, follow the steps below:
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/yourusername/DocVela.git
-   cd DocVela
+   cd DocVela```
+2. **Install dependencies**:
+
+Make sure all necessary dependencies are installed by running:
+
+```bash
+dotnet restore```
