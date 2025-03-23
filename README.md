@@ -49,10 +49,10 @@ To run this project locally, follow the steps below:
    ```json
    {
       "GitHubModels:Token": "YOUR_TOKEN_HERE"
-   }```
+   }
 4. **Run the application**:
    Launch the app with:
-   bash```
+   ```bash
    dotnet run
    
    
