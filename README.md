@@ -35,10 +35,15 @@ To run this project locally, follow the steps below:
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/yourusername/DocVela.git
-   cd DocVela```
+   cd DocVela
 2. **Install dependencies**:
+   Make sure all necessary dependencies are installed by running:
 
-Make sure all necessary dependencies are installed by running:
-
-```bash
-dotnet restore```
+   ```bash
+   dotnet restore
+3. **Set up your GitHub Personal Access Token**:
+   In appsettings.json:
+      json```
+      {
+         "GitHubModels:Token": "YOUR_TOKEN_HERE"
+      }
